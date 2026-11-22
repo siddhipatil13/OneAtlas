@@ -2,6 +2,27 @@
 
 OneAtlas is an AI model discovery and intelligence platform. It provides model discovery and details, side-by-side comparisons, benchmark rankings, and directories for AI labs and inference providers.
 
+## Production deployment
+
+- **Website:** [https://one-atlas-seven.vercel.app/](https://one-atlas-seven.vercel.app/)
+- **Source repository:** [https://github.com/siddhipatil13/OneAtlas](https://github.com/siddhipatil13/OneAtlas)
+- **Hosting:** Vercel
+- **Production database:** Neon PostgreSQL
+- **Framework:** Next.js App Router, deployed using Vercel's standard Next.js support. This project does not require a `vercel.json` override.
+
+Configure the production `DATABASE_URL` in Vercel's environment variable settings. Keep its value private; do not add credentials to this README or source control. Neon migrations use the `db:deploy:neon` script and the separate `DATABASE_URL_UNPOOLED` variable through the ignored local `.env.neon.local` file. Keep both connection values in secure environment storage.
+
+### Production verification
+
+The production deployment was manually verified:
+
+- Models API — passed (6 models)
+- Companies API — passed (6 companies)
+- Providers API — passed (7 providers)
+- Benchmarks API — passed (4 benchmarks)
+- Model details API — verified
+- Frontend pages — manually checked
+
 ## Technology
 
 - Next.js App Router, React, TypeScript, and Tailwind CSS

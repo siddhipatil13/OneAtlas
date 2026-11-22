@@ -1,4 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
+import { ModelType } from "@/generated/prisma/enums";
 import { unstable_rethrow } from "next/navigation";
 
 const MAX_PAGE_SIZE = 100;
@@ -68,6 +69,7 @@ export function parseModelFilters(searchParams: URLSearchParams) {
 
   const company = parseOptionalSlug(searchParams.get("company"), "company");
   const provider = parseOptionalSlug(searchParams.get("provider"), "provider");
+  const type = parseOptionalModelType(searchParams.get("type"));
   const capabilities = [...new Set(
     searchParams.getAll("capability")
       .flatMap((value) => value.split(","))
@@ -82,7 +84,7 @@ export function parseModelFilters(searchParams: URLSearchParams) {
     throw new ApiInputError("Each capability filter must be 60 characters or fewer.");
   }
 
-  return { search, company, provider, capabilities };
+  return { search, company, provider, type, capabilities };
 }
 
 function parseOptionalSlug(value: string | null, field: string) {
@@ -90,6 +92,16 @@ function parseOptionalSlug(value: string | null, field: string) {
   const normalized = value.trim().toLocaleLowerCase();
   if (normalized.length > 120) throw new ApiInputError(`${field} filter is too long.`);
   return normalized;
+}
+
+function parseOptionalModelType(value: string | null) {
+  if (value === null || value.trim() === "") return undefined;
+  const normalized = value.trim().toLocaleUpperCase();
+  const availableTypes = Object.values(ModelType);
+  if (!availableTypes.includes(normalized as (typeof availableTypes)[number])) {
+    throw new ApiInputError(`type must be one of ${availableTypes.join(", ")}.`);
+  }
+  return normalized as (typeof availableTypes)[number];
 }
 
 export type ModelSortField = "inputPrice" | "outputPrice" | "contextWindow" | "releaseDate";
@@ -119,6 +131,7 @@ export function modelWhere(filters: ReturnType<typeof parseModelFilters>): Prism
     ...(filters.search ? { name: { contains: filters.search, mode: "insensitive" } } : {}),
     ...(filters.company ? { company: { slug: filters.company } } : {}),
     ...(filters.provider ? { providers: { some: { provider: { slug: filters.provider } } } } : {}),
+    ...(filters.type ? { type: filters.type } : {}),
     ...(filters.capabilities.length ? { capabilities: { hasEvery: filters.capabilities } } : {}),
   };
 }

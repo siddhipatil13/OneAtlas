@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import type { ModelType } from "@/generated/prisma/enums";
 import { Icon } from "@/components/icon";
 
 const PAGE_SIZE = 12;
@@ -19,7 +20,7 @@ type ModelRecord = {
   slug: string;
   name: string;
   description: string;
-  type: "TEXT" | "MULTIMODAL" | "EMBEDDING" | "IMAGE" | "AUDIO" | "VIDEO";
+  type: ModelType;
   releaseDate: string | null;
   contextWindow: number | null;
   modalities: string[];
@@ -33,7 +34,7 @@ type ModelListResponse = {
   pagination: { limit: number; offset: number; total: number };
 };
 
-const typeLabels: Record<ModelRecord["type"], string> = {
+const typeLabels: Partial<Record<ModelType, string>> = {
   TEXT: "Text",
   MULTIMODAL: "Multimodal",
   EMBEDDING: "Embedding",
@@ -41,6 +42,23 @@ const typeLabels: Record<ModelRecord["type"], string> = {
   AUDIO: "Audio",
   VIDEO: "Video",
 };
+
+async function fetchModelCatalog(signal: AbortSignal) {
+  const pageSize = 100;
+  const firstResponse = await fetch(`/api/models?limit=${pageSize}&offset=0`, { signal });
+  if (!firstResponse.ok) throw new Error("Could not load model filter options.");
+  const firstPage = await firstResponse.json() as ModelListResponse;
+  const offsets = Array.from(
+    { length: Math.ceil(firstPage.pagination.total / pageSize) - 1 },
+    (_, index) => (index + 1) * pageSize,
+  );
+  const remainingPages = await Promise.all(offsets.map(async (offset) => {
+    const response = await fetch(`/api/models?limit=${pageSize}&offset=${offset}`, { signal });
+    if (!response.ok) throw new Error("Could not load the complete model catalog.");
+    return response.json() as Promise<ModelListResponse>;
+  }));
+  return [firstPage, ...remainingPages].flatMap((page) => page.data);
+}
 
 function formatContext(value: number | null) {
   if (value === null) return "Not listed";
@@ -75,6 +93,7 @@ export default function ModelDiscovery({ initialSearch = "" }: { initialSearch?:
   const [search, setSearch] = useState(initialSearch);
   const [company, setCompany] = useState("");
   const [provider, setProvider] = useState("");
+  const [modelType, setModelType] = useState<ModelType | "">("");
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [sort, setSort] = useState("releaseDate");
   const [page, setPage] = useState(1);
@@ -98,12 +117,8 @@ export default function ModelDiscovery({ initialSearch = "" }: { initialSearch?:
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/models?limit=100&offset=0", { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Could not load model filter options.");
-        return response.json() as Promise<ModelListResponse>;
-      })
-      .then((result) => setCatalog(result.data))
+    fetchModelCatalog(controller.signal)
+      .then(setCatalog)
       .catch(() => {
         if (!controller.signal.aborted) setCatalog([]);
       })
@@ -123,6 +138,7 @@ export default function ModelDiscovery({ initialSearch = "" }: { initialSearch?:
     if (search) params.set("search", search);
     if (company) params.set("company", company);
     if (provider) params.set("provider", provider);
+    if (modelType) params.set("type", modelType);
     capabilities.forEach((capability) => params.append("capability", capability));
 
     fetch(`/api/models?${params.toString()}`, { signal: controller.signal })
@@ -142,7 +158,7 @@ export default function ModelDiscovery({ initialSearch = "" }: { initialSearch?:
       });
 
     return () => controller.abort();
-  }, [search, company, provider, capabilities, sort, page, reloadKey]);
+  }, [search, company, provider, modelType, capabilities, sort, page, reloadKey]);
 
   const companies = useMemo(() => {
     const items = new Map<string, CompanySummary>();
@@ -160,6 +176,12 @@ export default function ModelDiscovery({ initialSearch = "" }: { initialSearch?:
     return [...new Set(catalog.flatMap((model) => model.capabilities))].sort((a, b) => a.localeCompare(b));
   }, [catalog]);
 
+  const modelTypes = useMemo(() => {
+    return [...new Set(catalog.map((model) => model.type))].sort((a, b) =>
+      (typeLabels[a] ?? a).localeCompare(typeLabels[b] ?? b),
+    );
+  }, [catalog]);
+
   const retry = useCallback(() => {
     setLoading(true);
     setCatalogLoading(true);
@@ -169,7 +191,7 @@ export default function ModelDiscovery({ initialSearch = "" }: { initialSearch?:
   const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const pageEnd = Math.min(page * PAGE_SIZE, total);
-  const hasFilters = Boolean(search || company || provider || capabilities.length);
+  const hasFilters = Boolean(search || company || provider || modelType || capabilities.length);
 
   function toggleCapability(value: string) {
     setLoading(true);
@@ -185,6 +207,7 @@ export default function ModelDiscovery({ initialSearch = "" }: { initialSearch?:
     setSearch("");
     setCompany("");
     setProvider("");
+    setModelType("");
     setCapabilities([]);
     setPage(1);
     setLoading(true);
@@ -232,6 +255,24 @@ export default function ModelDiscovery({ initialSearch = "" }: { initialSearch?:
             <select value={provider} onChange={(event) => { setLoading(true); setError(false); setPage(1); setProvider(event.target.value); }} aria-label="Filter by provider">
               <option value="">All providers</option>
               {providers.map((item) => <option key={item.id} value={item.slug}>{item.name}</option>)}
+            </select>
+          </label>
+
+          <label className="discovery-select-wrap">
+            <span>Model type</span>
+            <select
+              value={modelType}
+              disabled={catalogLoading || modelTypes.length === 0}
+              onChange={(event) => {
+                setLoading(true);
+                setError(false);
+                setPage(1);
+                setModelType(event.target.value as ModelType | "");
+              }}
+              aria-label="Filter by model type"
+            >
+              <option value="">All model types</option>
+              {modelTypes.map((item) => <option key={item} value={item}>{typeLabels[item] ?? item}</option>)}
             </select>
           </label>
 
@@ -299,7 +340,7 @@ export default function ModelDiscovery({ initialSearch = "" }: { initialSearch?:
                 </div>
                 <div className="discovery-model-title">
                   <div><h2>{model.name}</h2><p>{model.slug}</p></div>
-                  <span className={`discovery-type type-${model.type.toLowerCase()}`}>{typeLabels[model.type]}</span>
+                  <span className={`discovery-type type-${model.type.toLowerCase()}`}>{typeLabels[model.type] ?? model.type}</span>
                 </div>
                 <p className="discovery-model-description">{model.description}</p>
 
