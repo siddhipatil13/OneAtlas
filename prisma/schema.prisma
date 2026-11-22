@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CompanyType {
+  COMPANY
+  RESEARCH_LAB
+  BOTH
+}
+
+enum ModelType {
+  TEXT
+  MULTIMODAL
+  EMBEDDING
+  IMAGE
+  AUDIO
+  VIDEO
+}
+
+enum BenchmarkCategory {
+  REASONING
+  CODING
+  MATH
+  KNOWLEDGE
+  MULTIMODAL
+}
+
+model Company {
+  id          String       @id @default(cuid())
+  slug        String       @unique
+  name        String
+  type        CompanyType  @default(COMPANY)
+  description String       @db.Text
+  website     String?
+  headquarters String?
+  models      Model[]
+  providers   Provider[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([name])
+}
+
+model Provider {
+  id          String          @id @default(cuid())
+  slug        String          @unique
+  name        String
+  description String          @db.Text
+  website     String?
+  region      String?
+  companyId   String?
+  company     Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  models      ModelProvider[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([companyId])
+  @@index([name])
+}
+
+model Model {
+  id            String          @id @default(cuid())
+  slug          String          @unique
+  name          String
+  description   String          @db.Text
+  type          ModelType
+  releaseDate   DateTime?
+  contextWindow Int?
+  modalities    String[]
+  capabilities  String[]
+  featured      Boolean         @default(false)
+  companyId     String
+  company       Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  providers     ModelProvider[]
+  scores        BenchmarkScore[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([companyId])
+  @@index([type])
+  @@index([releaseDate])
+  @@index([contextWindow])
+}
+
+model ModelProvider {
+  id                      String   @id @default(cuid())
+  modelId                 String
+  providerId              String
+  providerModelId         String?
+  inputPricePerMillion    Decimal? @db.Decimal(12, 6)
+  outputPricePerMillion   Decimal? @db.Decimal(12, 6)
+  available               Boolean  @default(true)
+  model                   Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  provider                Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([modelId, providerId])
+  @@unique([providerId, providerModelId])
+  @@index([providerId])
+}
+
+model Benchmark {
+  id          String             @id @default(cuid())
+  slug        String             @unique
+  name        String
+  category    BenchmarkCategory
+  description String             @db.Text
+  sourceUrl   String?
+  scores      BenchmarkScore[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([category])
+}
+
+model BenchmarkScore {
+  modelId     String
+  benchmarkId String
+  score       Decimal   @db.Decimal(8, 4)
+  rank        Int?
+  evaluatedAt DateTime
+  model       Model     @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  benchmark   Benchmark @relation(fields: [benchmarkId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@id([modelId, benchmarkId])
+  @@index([benchmarkId, score])
+}
